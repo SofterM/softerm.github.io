@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from 'react';
-import { Github, Mail, Linkedin, MapPin, Phone, Award, Book, Briefcase, Code, Sun, Moon, LucideIcon } from 'lucide-react';
+import { Github, Mail, Phone, Award, Book, Briefcase, Code, Sun, Moon, LucideIcon } from 'lucide-react';
 
 export default function ResumePage() {
   const [isDark, setIsDark] = useState(false);
@@ -10,7 +10,7 @@ export default function ResumePage() {
     icon: LucideIcon;
     title: string;
   }
-  
+
   // ข้อมูลส่วนตัว - แก้ไขข้อมูลของคุณที่นี่
   const data = {
     name: "Aueaoangkun Aunmueang",
