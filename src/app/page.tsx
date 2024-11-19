@@ -1,10 +1,16 @@
 "use client";
 import React, { useState } from 'react';
-import { Github, Mail, Linkedin, MapPin, Phone, Award, Book, Briefcase, Code, Sun, Moon } from 'lucide-react';
+import { Github, Mail, Linkedin, MapPin, Phone, Award, Book, Briefcase, Code, Sun, Moon, LucideIcon } from 'lucide-react';
 
 export default function ResumePage() {
   const [isDark, setIsDark] = useState(false);
 
+  // Define the interface for SectionTitle props
+  interface SectionTitleProps {
+    icon: LucideIcon;
+    title: string;
+  }
+  
   // ข้อมูลส่วนตัว - แก้ไขข้อมูลของคุณที่นี่
   const data = {
     name: "Aueaoangkun Aunmueang",
@@ -67,14 +73,17 @@ export default function ResumePage() {
   };
 
   // Card Component
-  const Card = ({ children, className = '' }) => (
+  const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({ 
+    children, 
+    className = '' 
+  }) => (
     <div className={`relative overflow-hidden rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] ${isDark? 'bg-gray-800/50' : 'bg-white/80'} backdrop-blur-md border ${isDark? 'border-gray-700/30' : 'border-gray-200/30'} ${className}`}>
       {children}
     </div>
   );
 
   // Section Title Component
-  const SectionTitle = ({ icon: Icon, title }) => {
+  const SectionTitle: React.FC<SectionTitleProps> = ({ icon: Icon, title }) => {
     return (
       <div className="flex items-center gap-2 mb-4">
         <div className={`p-2 rounded-lg ${isDark ? 'bg-blue-500/20' : 'bg-blue-500/10'}`}>
