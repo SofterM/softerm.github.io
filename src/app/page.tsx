@@ -1,20 +1,20 @@
 "use client";
 import React, { useState } from 'react';
 import { Github, Mail, Phone, Award, Book, Briefcase, Code, Sun, Moon, LucideIcon } from 'lucide-react';
+import Image from 'next/image';
 
 export default function ResumePage() {
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(true); // Dark mode as default
 
-  // Define the interface for SectionTitle props
   interface SectionTitleProps {
     icon: LucideIcon;
     title: string;
   }
 
-  // ข้อมูลส่วนตัว - แก้ไขข้อมูลของคุณที่นี่
   const data = {
     name: "Aueaoangkun Aunmueang",
     title: "Software Engineer",
+    imageUrl: "/api/placeholder/400/400", // Replace with your image URL
     contacts: [
       { icon: Mail, value: "66023096@up.ac.th" },
       { icon: Phone, value: "0843236188" },
