@@ -2,6 +2,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { Github, Mail, Phone, Book, Briefcase, Code, Sun, Moon, LucideIcon, ExternalLink } from 'lucide-react';
+import { Eye } from 'lucide-react';
 
 // Tech stack icons
 const techIcons = {
@@ -141,11 +142,39 @@ const projects: Project[] = [
 export default function ResumePage() {
   const [isDark, setIsDark] = useState(true);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [viewCount, setViewCount] = useState(0);
+  const [viewStartTime, setViewStartTime] = useState(Date.now());
 
   useEffect(() => {
     setIsLoaded(true);
-  }, []);
+    const currentCount = parseInt(localStorage.getItem('resumeViewCount') || '0');
+    setViewCount(currentCount);
+    setViewStartTime(Date.now());
 
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        const duration = (Date.now() - viewStartTime) / 1000; // Convert to seconds
+        if (duration >= 5) {
+          const newCount = currentCount + 1;
+          localStorage.setItem('resumeViewCount', newCount.toString());
+          setViewCount(newCount);
+        }
+      } else {
+        setViewStartTime(Date.now());
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      const duration = (Date.now() - viewStartTime) / 1000;
+      if (duration >= 5) {
+        const newCount = currentCount + 1;
+        localStorage.setItem('resumeViewCount', newCount.toString());
+      }
+    };
+  }, []);
   const data: ResumeData = {
     name: "Aueaoangkun Aunmueang",
     title: "Software Engineer 66",
@@ -194,22 +223,40 @@ export default function ResumePage() {
           ${isDark ? 'bg-pink-500' : 'bg-pink-300'}`}></div>
       </div>
 
-      {/* Theme Toggle */}
-      <button
-        onClick={() => setIsDark(!isDark)}
-        className={`fixed top-4 right-4 p-3 rounded-full 
-          transition-all duration-300 hover:scale-110 active:scale-95
-          backdrop-blur-xl shadow-lg hover:shadow-2xl
-          ${isDark 
-            ? 'bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700/30' 
-            : 'bg-white/80 hover:bg-white border border-gray-200/50'} 
-          z-50`}
-        aria-label="Toggle theme"
-      >
-        {isDark 
-          ? <Sun className="text-yellow-500" /> 
-          : <Moon className="text-gray-700" />}
-      </button>
+      {/* View Counter Button */}
+      <div className="fixed top-4 left-4 flex items-center gap-2 sm:block">
+        <div
+          className={`p-2 sm:p-3 rounded-full 
+            transition-all duration-300
+            backdrop-blur-xl shadow-lg
+            ${isDark 
+              ? 'bg-gray-800/50 border border-gray-700/30' 
+              : 'bg-white/80 border border-gray-200/50'} 
+            z-50 flex items-center gap-2`}
+        >
+          <Eye className={`${isDark ? 'text-blue-400' : 'text-blue-600'} w-4 h-4 sm:w-5 sm:h-5`} />
+          <span className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-xs sm:text-sm font-medium`}>
+            {viewCount} views
+          </span>
+        </div>
+      </div>
+
+    {/* Theme Toggle */}
+    <button
+      onClick={() => setIsDark(!isDark)}
+      className={`fixed top-4 right-4 p-2 sm:p-3 rounded-full 
+        transition-all duration-300 hover:scale-110 active:scale-95
+        backdrop-blur-xl shadow-lg hover:shadow-2xl
+        ${isDark 
+          ? 'bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700/30' 
+          : 'bg-white/80 hover:bg-white border border-gray-200/50'} 
+        z-50`}
+      aria-label="Toggle theme"
+    >
+      {isDark 
+        ? <Sun className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" /> 
+        : <Moon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-700" />}
+    </button>
 
       <div className="relative max-w-5xl mx-auto p-4 md:p-8 lg:p-16 space-y-6">
         {/* Profile */}
