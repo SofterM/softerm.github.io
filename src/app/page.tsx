@@ -2,8 +2,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { Github, Mail, Phone, Book, Briefcase, Code, Sun, Moon, LucideIcon, ExternalLink } from 'lucide-react';
-import { Eye } from 'lucide-react';
-import { redis } from '@/lib/upstash';
 import ViewCounter from '@/components/ViewCounter';
 
 // Tech stack icons
@@ -149,7 +147,6 @@ export default function ResumePage() {
   useEffect(() => {
     setIsLoaded(true);
   }, []);
-
 
   
   const data: ResumeData = {

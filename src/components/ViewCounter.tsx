@@ -8,7 +8,6 @@ interface ViewCounterProps {
 
 const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
   const [viewCount, setViewCount] = useState(0);
-  const [timeSpent, setTimeSpent] = useState(0);
 
   useEffect(() => {
     // โหลดค่า view count เมื่อเริ่มต้น
@@ -19,23 +18,16 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
     const hasViewedThisSession = sessionStorage.getItem('hasViewed') === 'true';
     
     if (!hasViewedThisSession) {
-      // ถ้ายังไม่เคยนับในเซสชันนี้ ให้เริ่มนับเวลา
-      const timer = setInterval(() => {
-        setTimeSpent(prev => {
-          const newTime = prev + 1;
-          // ถ้าครบ 5 วินาทีและยังไม่เคยนับในเซสชันนี้
-          if (newTime >= 5) {
-            clearInterval(timer);
-            const newCount = savedCount + 1;
-            localStorage.setItem('viewCount', newCount.toString());
-            sessionStorage.setItem('hasViewed', 'true');
-            setViewCount(newCount);
-          }
-          return newTime;
-        });
-      }, 1000);
+      // รอ 5 วินาทีแล้วนับ view
+      const timer = setTimeout(() => {
+        const currentCount = parseInt(localStorage.getItem('viewCount') || '0');
+        const newCount = currentCount + 1;
+        localStorage.setItem('viewCount', newCount.toString());
+        sessionStorage.setItem('hasViewed', 'true');
+        setViewCount(newCount);
+      }, 5000);
 
-      return () => clearInterval(timer);
+      return () => clearTimeout(timer);
     }
   }, []);
 
