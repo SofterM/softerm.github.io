@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { Github, Mail, Phone, Book, Briefcase, Code, Sun, Moon, LucideIcon, ExternalLink } from 'lucide-react';
 import { Eye } from 'lucide-react';
+import { redis } from '@/lib/upstash';
+import ViewCounter from '@/components/ViewCounter';
 
 // Tech stack icons
 const techIcons = {
@@ -64,6 +66,7 @@ interface ResumeData {
   summary: string;
   skills: Skill[];
 }
+
 
 // Components
 const Card: React.FC<CardProps> = ({ children, className = '', delay = 0, isLoaded, isDark }) => (
@@ -142,39 +145,13 @@ const projects: Project[] = [
 export default function ResumePage() {
   const [isDark, setIsDark] = useState(true);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [viewCount, setViewCount] = useState(0);
-  const [viewStartTime, setViewStartTime] = useState(Date.now());
 
   useEffect(() => {
     setIsLoaded(true);
-    const currentCount = parseInt(localStorage.getItem('resumeViewCount') || '0');
-    setViewCount(currentCount);
-    setViewStartTime(Date.now());
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        const duration = (Date.now() - viewStartTime) / 1000; // Convert to seconds
-        if (duration >= 5) {
-          const newCount = currentCount + 1;
-          localStorage.setItem('resumeViewCount', newCount.toString());
-          setViewCount(newCount);
-        }
-      } else {
-        setViewStartTime(Date.now());
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      const duration = (Date.now() - viewStartTime) / 1000;
-      if (duration >= 5) {
-        const newCount = currentCount + 1;
-        localStorage.setItem('resumeViewCount', newCount.toString());
-      }
-    };
   }, []);
+
+
+  
   const data: ResumeData = {
     name: "Aueaoangkun Aunmueang",
     title: "Software Engineer 66",
@@ -224,22 +201,7 @@ export default function ResumePage() {
       </div>
 
       {/* View Counter Button */}
-      <div className="fixed top-4 left-4 flex items-center gap-2 sm:block">
-        <div
-          className={`p-2 sm:p-3 rounded-full 
-            transition-all duration-300
-            backdrop-blur-xl shadow-lg
-            ${isDark 
-              ? 'bg-gray-800/50 border border-gray-700/30' 
-              : 'bg-white/80 border border-gray-200/50'} 
-            z-50 flex items-center gap-2`}
-        >
-          <Eye className={`${isDark ? 'text-blue-400' : 'text-blue-600'} w-4 h-4 sm:w-5 sm:h-5`} />
-          <span className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-xs sm:text-sm font-medium`}>
-            {viewCount} views
-          </span>
-        </div>
-      </div>
+      <ViewCounter isDark={isDark} />
 
     {/* Theme Toggle */}
     <button
