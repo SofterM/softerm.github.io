@@ -1,108 +1,127 @@
-// src/components/ViewCounter.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Eye } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { PageView, PostgresChanges } from '@/types/supabase';
 
 interface ViewCounterProps {
   isDark: boolean;
 }
 
-const STORAGE_KEY = 'viewTimestamp';
-const MINIMUM_VIEW_TIME = 5000; // 5 seconds in milliseconds
+const VIEW_COUNT_KEY = 'view-count-key';
+const LAST_VIEW_TIME = 'last-view-time';
+const MINIMUM_VIEW_INTERVAL = 5000;
 
 const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
   const [viewCount, setViewCount] = useState<number | null>(null);
 
+  const fetchViewCount = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('page_views')
+        .select('count')
+        .eq('page_id', VIEW_COUNT_KEY)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          const { data: newData, error: insertError } = await supabase
+            .from('page_views')
+            .insert([{ page_id: VIEW_COUNT_KEY, count: 0 }])
+            .select()
+            .single();
+
+          if (!insertError && newData) {
+            setViewCount(0);
+            return;
+          }
+        }
+        throw error;
+      }
+
+      setViewCount(data?.count || 0);
+    } catch (error) {
+      console.error('Error fetching view count:', error);
+    }
+  }, []);
+
+  const incrementViewCount = useCallback(async () => {
+    try {
+      const { data: currentData, error: fetchError } = await supabase
+        .from('page_views')
+        .select('count')
+        .eq('page_id', VIEW_COUNT_KEY)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const newCount = (currentData?.count || 0) + 1;
+      
+      const { error: updateError } = await supabase
+        .from('page_views')
+        .update({ count: newCount })
+        .eq('page_id', VIEW_COUNT_KEY);
+
+      if (updateError) throw updateError;
+
+      setViewCount(newCount);
+      localStorage.setItem(LAST_VIEW_TIME, Date.now().toString());
+    } catch (error) {
+      console.error('Error incrementing view count:', error);
+    }
+  }, []);
+
+  const shouldCountView = useCallback(() => {
+    const lastViewTime = localStorage.getItem(LAST_VIEW_TIME);
+    if (!lastViewTime) return true;
+
+    const timeDiff = Date.now() - parseInt(lastViewTime);
+    return timeDiff >= MINIMUM_VIEW_INTERVAL;
+  }, []);
+
   useEffect(() => {
-    let isMounted = true;
-
-    const fetchViews = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('page_views')
-          .select('count')
-          .eq('page_id', 'main')
-          .single();
-
-        if (error) throw error;
-        if (isMounted) {
-          setViewCount(data?.count || 0);
+    const channel = supabase
+      .channel('page_views_changes')
+      .on<PostgresChanges>(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'page_views',
+          filter: `page_id=eq.${VIEW_COUNT_KEY}`
+        },
+        (payload) => {
+          const newData = payload.new as PageView;
+          if (newData && typeof newData.count === 'number') {
+            setViewCount(newData.count);
+          }
         }
-      } catch (error) {
-        console.error('Error fetching views:', error);
-      }
-    };
+      )
+      .subscribe();
 
-    const shouldCountView = () => {
-      const lastViewTime = localStorage.getItem(STORAGE_KEY);
-      const currentTime = Date.now();
-
-      if (!lastViewTime) return true;
-
-      const timeDifference = currentTime - parseInt(lastViewTime);
-      return timeDifference >= MINIMUM_VIEW_TIME;
-    };
-
-    const incrementViews = async () => {
-      try {
-        // ดึงค่าปัจจุบันก่อน
-        const { data: currentData, error: fetchError } = await supabase
-          .from('page_views')
-          .select('count')
-          .eq('page_id', 'main')
-          .single();
-
-        if (fetchError) throw fetchError;
-
-        // อัพเดทค่าใหม่
-        const newCount = (currentData?.count || 0) + 1;
-        const { error: updateError } = await supabase
-          .from('page_views')
-          .update({ count: newCount })
-          .eq('page_id', 'main');
-
-        if (updateError) throw updateError;
-
-        if (isMounted) {
-          setViewCount(newCount);
-        }
-        
-        // บันทึกเวลาที่นับ view
-        localStorage.setItem(STORAGE_KEY, Date.now().toString());
-      } catch (error) {
-        console.error('Error incrementing views:', error);
-      }
-    };
-
-    // ฟังก์ชันสำหรับเริ่มนับเวลาดูเพจ
-    const startViewTimer = () => {
-      if (shouldCountView()) {
-        const timer = setTimeout(() => {
-          incrementViews();
-        }, MINIMUM_VIEW_TIME);
-        return timer;
-      }
-      return null;
-    };
-
-    // เริ่มต้นโดยดึงข้อมูลปัจจุบัน
-    fetchViews();
-
-    // เริ่มนับเวลาดูเพจ
-    const timer = startViewTimer();
-
-    // Cleanup
     return () => {
-      isMounted = false;
-      if (timer) clearTimeout(timer);
+      channel.unsubscribe();
     };
   }, []);
 
-  // ฟังก์ชันสำหรับ format จำนวน views
-  const formatViewCount = (count: number | null): string => {
-    if (count === null) return 'Loading...';
-    return `${count.toLocaleString()} ${count === 1 ? 'view' : 'views'}`;
-  };
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | undefined;
+
+    const initializeCounter = async () => {
+      await fetchViewCount();
+      
+      if (shouldCountView()) {
+        timeoutId = setTimeout(async () => {
+          await incrementViewCount();
+        }, MINIMUM_VIEW_INTERVAL);
+      }
+    };
+
+    initializeCounter();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [fetchViewCount, incrementViewCount, shouldCountView]);
 
   return (
     <div
@@ -121,7 +140,7 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
       <span 
         className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-xs sm:text-sm font-medium`}
       >
-        {formatViewCount(viewCount)}
+        {viewCount === null ? 'Loading...' : `${viewCount.toLocaleString()} views`}
       </span>
     </div>
   );
