@@ -2,26 +2,28 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Eye, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { PageView, PostgresChanges } from '@/types/supabase';
+import { getVisitorIP } from '@/lib/ip-service';
+import type { ViewRecord, PostgresChanges } from '@/types/supabase';
 
 interface ViewCounterProps {
   isDark: boolean;
 }
 
 const VIEW_COUNT_KEY = 'view-count-key';
-const VIEW_COUNTED_KEY = 'view-counted'; // ใช้ sessionStorage แทน localStorage
-const MINIMUM_VIEW_TIME = 5000; // 5 seconds
+const VIEW_COUNTED_KEY = 'view-counted';
+const MINIMUM_VIEW_TIME = 5000;
 
 const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
   const [viewCount, setViewCount] = useState<number | null>(null);
+  const [uniqueVisitors, setUniqueVisitors] = useState<number>(0);
   const [isVisible, setIsVisible] = useState(true);
-  const [hasStartedCounting, setHasStartedCounting] = useState(false);
+  const [startTime, setStartTime] = useState<number | null>(null);
 
   const fetchViewCount = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('page_views')
-        .select('count')
+        .select('count, visitor_ips')
         .eq('page_id', VIEW_COUNT_KEY)
         .single();
 
@@ -29,12 +31,17 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
         if (error.code === 'PGRST116') {
           const { data: newData, error: insertError } = await supabase
             .from('page_views')
-            .insert([{ page_id: VIEW_COUNT_KEY, count: 0 }])
+            .insert([{ 
+              page_id: VIEW_COUNT_KEY, 
+              count: 0,
+              visitor_ips: []
+            }])
             .select()
             .single();
 
           if (!insertError && newData) {
             setViewCount(0);
+            setUniqueVisitors(0);
             return;
           }
         }
@@ -42,6 +49,7 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
       }
 
       setViewCount(data?.count || 0);
+      setUniqueVisitors((data?.visitor_ips as string[])?.length || 0);
     } catch (error) {
       console.error('Error fetching view count:', error);
     }
@@ -49,66 +57,81 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
 
   const incrementViewCount = useCallback(async () => {
     try {
-      // ตรวจสอบว่าได้นับไปแล้วหรือยังในแท็บนี้
       const hasCounted = sessionStorage.getItem(VIEW_COUNTED_KEY);
-      if (hasCounted === 'true') {
-        return;
-      }
+      if (hasCounted === 'true') return;
 
+      // ดึง IP ของผู้เข้าชม
+      const visitorIP = await getVisitorIP();
+
+      // ดึงข้อมูลปัจจุบัน
       const { data: currentData, error: fetchError } = await supabase
         .from('page_views')
-        .select('count')
+        .select('count, visitor_ips')
         .eq('page_id', VIEW_COUNT_KEY)
         .single();
 
       if (fetchError) throw fetchError;
 
       const newCount = (currentData?.count || 0) + 1;
+      const currentIPs = (currentData?.visitor_ips as string[]) || [];
       
+      // เพิ่ม IP เข้าไปในรายการเสมอ (นับซ้ำได้)
+      const updatedIPs = [...currentIPs, visitorIP];
+
       const { error: updateError } = await supabase
         .from('page_views')
-        .update({ count: newCount })
+        .update({ 
+          count: newCount,
+          visitor_ips: updatedIPs
+        })
         .eq('page_id', VIEW_COUNT_KEY);
 
       if (updateError) throw updateError;
 
       setViewCount(newCount);
-      // บันทึกว่าได้นับแล้วในแท็บนี้
+      setUniqueVisitors(new Set(updatedIPs).size); // นับจำนวน IP ที่ไม่ซ้ำกัน
       sessionStorage.setItem(VIEW_COUNTED_KEY, 'true');
     } catch (error) {
       console.error('Error incrementing view count:', error);
     }
   }, []);
 
-  // เริ่มนับเวลาเมื่อโหลดหน้า
   useEffect(() => {
     const hasCounted = sessionStorage.getItem(VIEW_COUNTED_KEY);
-    if (!hasCounted && !hasStartedCounting) {
-      setHasStartedCounting(true);
-      
-      // เริ่มนับเวลา 5 วินาที
-      const timer = setTimeout(() => {
-        incrementViewCount();
-      }, MINIMUM_VIEW_TIME);
-
-      // ตรวจสอบการออกจากแท็บ
-      const handleVisibilityChange = () => {
-        if (document.hidden) {
-          clearTimeout(timer);
-          setHasStartedCounting(false);
-        }
-      };
-
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-
-      return () => {
-        clearTimeout(timer);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-      };
+    if (!hasCounted) {
+      setStartTime(Date.now());
     }
-  }, [incrementViewCount, hasStartedCounting]);
+  }, []);
 
-  // ดึงข้อมูล view count และติดตามการเปลี่ยนแปลง
+  useEffect(() => {
+    if (startTime) {
+      const timer = setInterval(() => {
+        const timeSpent = Date.now() - startTime;
+        if (timeSpent >= MINIMUM_VIEW_TIME) {
+          incrementViewCount();
+          clearInterval(timer);
+        }
+      }, 1000);
+
+      return () => clearInterval(timer);
+    }
+  }, [startTime, incrementViewCount]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // รีเซ็ต session storage เมื่อกลับมาที่แท็บ
+        sessionStorage.removeItem(VIEW_COUNTED_KEY);
+        setStartTime(Date.now());
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   useEffect(() => {
     fetchViewCount();
 
@@ -123,12 +146,12 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
           filter: `page_id=eq.${VIEW_COUNT_KEY}`
         },
         (payload) => {
-          if (
-            payload.new &&
-            'count' in payload.new &&
-            typeof payload.new.count === 'number'
-          ) {
-            setViewCount(payload.new.count);
+          const newData = payload.new as ViewRecord;
+          if (newData && typeof newData.count === 'number') {
+            setViewCount(newData.count);
+            if (Array.isArray(newData.visitor_ips)) {
+              setUniqueVisitors(new Set(newData.visitor_ips).size);
+            }
           }
         }
       )
@@ -155,11 +178,14 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
       <Eye 
         className={`${isDark ? 'text-blue-400' : 'text-blue-600'} w-4 h-4 sm:w-5 sm:h-5`} 
       />
-      <span 
-        className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-xs sm:text-sm font-medium`}
-      >
-        {viewCount === null ? 'Loading...' : `${viewCount.toLocaleString()} views`}
-      </span>
+      <div className="flex flex-col">
+        <span 
+          className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-xs sm:text-sm font-medium`}
+        >
+          {viewCount === null ? 'Loading...' : `${viewCount.toLocaleString()} views`}
+        </span>
+
+      </div>
       <button
         onClick={() => setIsVisible(false)}
         className={`ml-2 p-1 rounded-full 

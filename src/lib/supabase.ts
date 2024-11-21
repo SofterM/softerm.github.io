@@ -1,13 +1,16 @@
-// src/lib/supabase.ts
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error(
-    'Missing environment variables: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be defined'
-  );
+// ตรวจสอบว่ามี environment variables ครบ
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  throw new Error('Missing environment variable: NEXT_PUBLIC_SUPABASE_URL');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  throw new Error('Missing environment variable: NEXT_PUBLIC_SUPABASE_ANON_KEY');
+}
+
+// สร้าง Supabase client สำหรับเชื่อมต่อกับ database
+export const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
