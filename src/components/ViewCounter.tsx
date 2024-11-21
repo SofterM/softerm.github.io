@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Eye, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { getVisitorIP } from '@/lib/ip-service';
 import type { ViewRecord, PostgresChanges } from '@/types/supabase';
 
 interface ViewCounterProps {
@@ -15,7 +14,6 @@ const MINIMUM_VIEW_TIME = 5000;
 
 const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
   const [viewCount, setViewCount] = useState<number | null>(null);
-  const [uniqueVisitors, setUniqueVisitors] = useState<number>(0);
   const [isVisible, setIsVisible] = useState(true);
   const [startTime, setStartTime] = useState<number | null>(null);
 
@@ -23,7 +21,7 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
     try {
       const { data, error } = await supabase
         .from('page_views')
-        .select('count, visitor_ips')
+        .select('count')
         .eq('page_id', VIEW_COUNT_KEY)
         .single();
 
@@ -33,15 +31,13 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
             .from('page_views')
             .insert([{ 
               page_id: VIEW_COUNT_KEY, 
-              count: 0,
-              visitor_ips: []
+              count: 0
             }])
             .select()
             .single();
 
           if (!insertError && newData) {
             setViewCount(0);
-            setUniqueVisitors(0);
             return;
           }
         }
@@ -49,7 +45,6 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
       }
 
       setViewCount(data?.count || 0);
-      setUniqueVisitors((data?.visitor_ips as string[])?.length || 0);
     } catch (error) {
       console.error('Error fetching view count:', error);
     }
@@ -60,36 +55,24 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
       const hasCounted = sessionStorage.getItem(VIEW_COUNTED_KEY);
       if (hasCounted === 'true') return;
 
-      // ดึง IP ของผู้เข้าชม
-      const visitorIP = await getVisitorIP();
-
-      // ดึงข้อมูลปัจจุบัน
       const { data: currentData, error: fetchError } = await supabase
         .from('page_views')
-        .select('count, visitor_ips')
+        .select('count')
         .eq('page_id', VIEW_COUNT_KEY)
         .single();
 
       if (fetchError) throw fetchError;
 
       const newCount = (currentData?.count || 0) + 1;
-      const currentIPs = (currentData?.visitor_ips as string[]) || [];
-      
-      // เพิ่ม IP เข้าไปในรายการเสมอ (นับซ้ำได้)
-      const updatedIPs = [...currentIPs, visitorIP];
 
       const { error: updateError } = await supabase
         .from('page_views')
-        .update({ 
-          count: newCount,
-          visitor_ips: updatedIPs
-        })
+        .update({ count: newCount })
         .eq('page_id', VIEW_COUNT_KEY);
 
       if (updateError) throw updateError;
 
       setViewCount(newCount);
-      setUniqueVisitors(new Set(updatedIPs).size); // นับจำนวน IP ที่ไม่ซ้ำกัน
       sessionStorage.setItem(VIEW_COUNTED_KEY, 'true');
     } catch (error) {
       console.error('Error incrementing view count:', error);
@@ -120,7 +103,6 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        // รีเซ็ต session storage เมื่อกลับมาที่แท็บ
         sessionStorage.removeItem(VIEW_COUNTED_KEY);
         setStartTime(Date.now());
       }
@@ -149,9 +131,6 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
           const newData = payload.new as ViewRecord;
           if (newData && typeof newData.count === 'number') {
             setViewCount(newData.count);
-            if (Array.isArray(newData.visitor_ips)) {
-              setUniqueVisitors(new Set(newData.visitor_ips).size);
-            }
           }
         }
       )
@@ -184,7 +163,6 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
         >
           {viewCount === null ? 'Loading...' : `${viewCount.toLocaleString()} views`}
         </span>
-
       </div>
       <button
         onClick={() => setIsVisible(false)}
