@@ -8,7 +8,7 @@ interface ViewCounterProps {
 }
 
 const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
-  const [viewCount, setViewCount] = useState(0);
+  const [viewCount, setViewCount] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchViews = async () => {
@@ -17,21 +17,11 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
         const { data, error } = await supabase
           .from('page_views')
           .select('count')
+          .eq('page_id', 'main')
           .single();
         
         if (error) {
-          if (error.code === 'PGRST116') {
-            // ถ้าไม่มีข้อมูล ให้สร้างใหม่
-            const { data: newData, error: insertError } = await supabase
-              .from('page_views')
-              .insert([{ count: 1 }])
-              .select()
-              .single();
-
-            if (!insertError && newData) {
-              setViewCount(1);
-            }
-          }
+          console.error('Error fetching views:', error);
           return;
         }
 
@@ -43,22 +33,31 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
 
     const incrementViews = async () => {
       try {
-        const { data, error } = await supabase
+        const { data: currentData, error: fetchError } = await supabase
           .from('page_views')
-          .select('*')
+          .select('count')
+          .eq('page_id', 'main')
           .single();
 
-        if (error) return;
+        if (fetchError) {
+          console.error('Error fetching current count:', fetchError);
+          return;
+        }
 
-        const newCount = (data.count || 0) + 1;
+        const currentCount = currentData?.count || 0;
+        const newCount = currentCount + 1;
+
         const { error: updateError } = await supabase
           .from('page_views')
           .update({ count: newCount })
-          .eq('id', data.id);
+          .eq('page_id', 'main');
 
-        if (!updateError) {
-          setViewCount(newCount);
+        if (updateError) {
+          console.error('Error updating count:', updateError);
+          return;
         }
+
+        setViewCount(newCount);
       } catch (error) {
         console.error('Failed to increment views:', error);
       }
@@ -98,7 +97,7 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
       <span 
         className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-xs sm:text-sm font-medium`}
       >
-        {viewCount.toLocaleString()} views
+        {viewCount !== null ? `${viewCount.toLocaleString()} views` : 'Loading...'}
       </span>
     </div>
   );
