@@ -1,5 +1,6 @@
+// src/components/ViewCounter.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { Eye } from 'lucide-react';
+import { Eye, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { PageView, PostgresChanges } from '@/types/supabase';
 
@@ -8,11 +9,13 @@ interface ViewCounterProps {
 }
 
 const VIEW_COUNT_KEY = 'view-count-key';
-const LAST_VIEW_TIME = 'last-view-time';
-const MINIMUM_VIEW_INTERVAL = 5000;
+const VIEW_COUNTED_KEY = 'view-counted'; // ใช้ sessionStorage แทน localStorage
+const MINIMUM_VIEW_TIME = 5000; // 5 seconds
 
 const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
   const [viewCount, setViewCount] = useState<number | null>(null);
+  const [isVisible, setIsVisible] = useState(true);
+  const [hasStartedCounting, setHasStartedCounting] = useState(false);
 
   const fetchViewCount = useCallback(async () => {
     try {
@@ -46,6 +49,12 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
 
   const incrementViewCount = useCallback(async () => {
     try {
+      // ตรวจสอบว่าได้นับไปแล้วหรือยังในแท็บนี้
+      const hasCounted = sessionStorage.getItem(VIEW_COUNTED_KEY);
+      if (hasCounted === 'true') {
+        return;
+      }
+
       const { data: currentData, error: fetchError } = await supabase
         .from('page_views')
         .select('count')
@@ -64,21 +73,45 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
       if (updateError) throw updateError;
 
       setViewCount(newCount);
-      localStorage.setItem(LAST_VIEW_TIME, Date.now().toString());
+      // บันทึกว่าได้นับแล้วในแท็บนี้
+      sessionStorage.setItem(VIEW_COUNTED_KEY, 'true');
     } catch (error) {
       console.error('Error incrementing view count:', error);
     }
   }, []);
 
-  const shouldCountView = useCallback(() => {
-    const lastViewTime = localStorage.getItem(LAST_VIEW_TIME);
-    if (!lastViewTime) return true;
-
-    const timeDiff = Date.now() - parseInt(lastViewTime);
-    return timeDiff >= MINIMUM_VIEW_INTERVAL;
-  }, []);
-
+  // เริ่มนับเวลาเมื่อโหลดหน้า
   useEffect(() => {
+    const hasCounted = sessionStorage.getItem(VIEW_COUNTED_KEY);
+    if (!hasCounted && !hasStartedCounting) {
+      setHasStartedCounting(true);
+      
+      // เริ่มนับเวลา 5 วินาที
+      const timer = setTimeout(() => {
+        incrementViewCount();
+      }, MINIMUM_VIEW_TIME);
+
+      // ตรวจสอบการออกจากแท็บ
+      const handleVisibilityChange = () => {
+        if (document.hidden) {
+          clearTimeout(timer);
+          setHasStartedCounting(false);
+        }
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+
+      return () => {
+        clearTimeout(timer);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+    }
+  }, [incrementViewCount, hasStartedCounting]);
+
+  // ดึงข้อมูล view count และติดตามการเปลี่ยนแปลง
+  useEffect(() => {
+    fetchViewCount();
+
     const channel = supabase
       .channel('page_views_changes')
       .on<PostgresChanges>(
@@ -90,9 +123,12 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
           filter: `page_id=eq.${VIEW_COUNT_KEY}`
         },
         (payload) => {
-          const newData = payload.new as PageView;
-          if (newData && typeof newData.count === 'number') {
-            setViewCount(newData.count);
+          if (
+            payload.new &&
+            'count' in payload.new &&
+            typeof payload.new.count === 'number'
+          ) {
+            setViewCount(payload.new.count);
           }
         }
       )
@@ -101,27 +137,9 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
     return () => {
       channel.unsubscribe();
     };
-  }, []);
+  }, [fetchViewCount]);
 
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout | undefined;
-
-    const initializeCounter = async () => {
-      await fetchViewCount();
-      
-      if (shouldCountView()) {
-        timeoutId = setTimeout(async () => {
-          await incrementViewCount();
-        }, MINIMUM_VIEW_INTERVAL);
-      }
-    };
-
-    initializeCounter();
-
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [fetchViewCount, incrementViewCount, shouldCountView]);
+  if (!isVisible) return null;
 
   return (
     <div
@@ -142,6 +160,16 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
       >
         {viewCount === null ? 'Loading...' : `${viewCount.toLocaleString()} views`}
       </span>
+      <button
+        onClick={() => setIsVisible(false)}
+        className={`ml-2 p-1 rounded-full 
+          transition-colors duration-200
+          hover:bg-gray-700/20
+          ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-600 hover:text-gray-800'}`}
+        aria-label="Close view counter"
+      >
+        <X className="w-3 h-3 sm:w-4 sm:h-4" />
+      </button>
     </div>
   );
 };
