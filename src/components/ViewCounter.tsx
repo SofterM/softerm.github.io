@@ -1,6 +1,7 @@
 // src/components/ViewCounter.tsx
-import React, { useState, useEffect, useCallback } from 'react';
-import { Eye, X } from 'lucide-react';
+
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Eye } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { ViewRecord, PostgresChanges } from '@/types/supabase';
 
@@ -11,11 +12,46 @@ interface ViewCounterProps {
 const VIEW_COUNT_KEY = 'view-count-key';
 const VIEW_COUNTED_KEY = 'view-counted';
 const MINIMUM_VIEW_TIME = 5000;
+const ANIMATION_DURATION = 2000;
+const SCROLL_THRESHOLD = 100; // Show counter when scrolled less than this
 
 const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
   const [viewCount, setViewCount] = useState<number | null>(null);
-  const [isVisible, setIsVisible] = useState(true);
+  const [displayCount, setDisplayCount] = useState<number>(0);
   const [startTime, setStartTime] = useState<number | null>(null);
+  const [opacity, setOpacity] = useState(1);
+  const previousCount = useRef<number | null>(null);
+
+  // Update opacity based on scroll position
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollPosition = window.scrollY;
+      const newOpacity = Math.max(0, 1 - (scrollPosition / SCROLL_THRESHOLD));
+      setOpacity(newOpacity);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll(); // Initial check
+
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Rest of your existing logic...
+  const animateCount = useCallback((start: number, end: number, duration: number) => {
+    const startTime = Date.now();
+    const updateCount = () => {
+      const now = Date.now();
+      const progress = Math.min((now - startTime) / duration, 1);
+      const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+      const currentCount = Math.floor(start + (end - start) * easeOutQuart);
+      setDisplayCount(currentCount);
+
+      if (progress < 1) {
+        requestAnimationFrame(updateCount);
+      }
+    };
+    requestAnimationFrame(updateCount);
+  }, []);
 
   const fetchViewCount = useCallback(async () => {
     try {
@@ -38,17 +74,29 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
 
           if (!insertError && newData) {
             setViewCount(0);
+            if (previousCount.current === null) {
+              animateCount(0, 0, ANIMATION_DURATION);
+            }
+            previousCount.current = 0;
             return;
           }
         }
         throw error;
       }
 
-      setViewCount(data?.count || 0);
+      const newCount = data?.count || 0;
+      setViewCount(newCount);
+      
+      if (previousCount.current === null) {
+        animateCount(0, newCount, ANIMATION_DURATION);
+      } else {
+        animateCount(previousCount.current, newCount, ANIMATION_DURATION);
+      }
+      previousCount.current = newCount;
     } catch (error) {
       console.error('Error fetching view count:', error);
     }
-  }, []);
+  }, [animateCount]);
 
   const incrementViewCount = useCallback(async () => {
     try {
@@ -101,20 +149,6 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
   }, [startTime, incrementViewCount]);
 
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        sessionStorage.removeItem(VIEW_COUNTED_KEY);
-        setStartTime(Date.now());
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  useEffect(() => {
     fetchViewCount();
 
     const channel = supabase
@@ -131,6 +165,10 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
           const newData = payload.new as ViewRecord;
           if (newData && typeof newData.count === 'number') {
             setViewCount(newData.count);
+            if (previousCount.current !== null) {
+              animateCount(previousCount.current, newData.count, ANIMATION_DURATION);
+            }
+            previousCount.current = newData.count;
           }
         }
       )
@@ -139,41 +177,45 @@ const ViewCounter: React.FC<ViewCounterProps> = ({ isDark }) => {
     return () => {
       channel.unsubscribe();
     };
-  }, [fetchViewCount]);
+  }, [fetchViewCount, animateCount]);
 
-  if (!isVisible) return null;
+  if (opacity === 0) return null;
 
   return (
     <div
-      className={`fixed top-4 left-4 z-50 
+      className={`fixed top-4 left-4 z-50
         p-2 sm:p-3 rounded-full 
         transition-all duration-300
         backdrop-blur-xl shadow-lg
         ${isDark 
-          ? 'bg-gray-800/50 border border-gray-700/30' 
-          : 'bg-white/80 border border-gray-200/50'} 
-        flex items-center gap-2`}
+          ? 'bg-purple-900/30 hover:bg-purple-800/40 border border-purple-700/30' 
+          : 'bg-white/80 hover:bg-purple-50/80 border border-purple-200/50'} 
+        flex items-center gap-2 group`}
+      style={{
+        opacity,
+        transform: `translateY(${(1 - opacity) * -20}px)`, // Slide up slightly as it fades
+        pointerEvents: opacity > 0.1 ? 'auto' : 'none' // Disable interaction when nearly invisible
+      }}
     >
       <Eye 
-        className={`${isDark ? 'text-blue-400' : 'text-blue-600'} w-4 h-4 sm:w-5 sm:h-5`} 
+        className={`${isDark ? 'text-purple-400' : 'text-purple-600'} 
+          w-4 h-4 sm:w-5 sm:h-5
+          transition-transform duration-300 group-hover:scale-110`} 
       />
       <div className="flex flex-col">
         <span 
-          className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-xs sm:text-sm font-medium`}
+          className={`${isDark ? 'text-purple-300' : 'text-purple-600'} 
+            text-xs sm:text-sm font-medium
+            transition-all duration-300`}
         >
-          {viewCount === null ? 'Loading...' : `${viewCount.toLocaleString()} views`}
+          {viewCount === null ? 'Loading...' : `${displayCount.toLocaleString()} views`}
         </span>
       </div>
-      <button
-        onClick={() => setIsVisible(false)}
-        className={`ml-2 p-1 rounded-full 
-          transition-colors duration-200
-          hover:bg-gray-700/20
-          ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-600 hover:text-gray-800'}`}
-        aria-label="Close view counter"
-      >
-        <X className="w-3 h-3 sm:w-4 sm:h-4" />
-      </button>
+      
+      {/* Glow effect */}
+      <div className={`absolute inset-0 -z-10 rounded-full blur-md opacity-50
+        transition-opacity duration-300 group-hover:opacity-75
+        ${isDark ? 'bg-purple-800/30' : 'bg-purple-200/50'}`} />
     </div>
   );
 };
